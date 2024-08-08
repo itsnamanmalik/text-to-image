@@ -1,0 +1,49 @@
+services:
+  db:
+    image: postgres:16.2
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: texttoimage
+      POSTGRES_PASSWORD: texttoimage
+      POSTGRES_DB: texttoimage
+
+  texttoimage:
+    build: .
+    command: bash -c "python manage.py migrate && python  manage.py collectstatic --noinput && gunicorn --bind :8000 --workers=1 --threads=4 --timeout=120 --worker-class=gthread texttoimage.wsgi --reload"
+    volumes:
+      - .:/code
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+
+  celery:
+    build: .
+    command: bash -c "celery -A texttoimage worker -l info -B"  
+    volumes:
+      - .:/code
+    depends_on:
+      - texttoimage
+    env_file:
+      - .env
+
+
+  redis:
+    image: redis:7.2.1-alpine
+    restart: always
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - ./data/redis:/data
+
+  nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./texttoimage/static:/code/texttoimage/static
+      - ./texttoimage/media:/code/texttoimage/media
+    depends_on:
+      - texttoimage
